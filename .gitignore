@@ -50,6 +50,12 @@ coverage.xml
 # Django stuff:
 *.log
 
+# Local runtime state
+.env
+state/
+.playwright-mcp/
+network-requests.txt
+
 # Sphinx documentation
 docs/_build/
 

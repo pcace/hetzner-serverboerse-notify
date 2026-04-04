@@ -1,0 +1,8 @@
+.env
+.git
+.gitignore
+.playwright-mcp
+__pycache__
+*.py[cod]
+state
+network-requests.txt

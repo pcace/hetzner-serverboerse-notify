@@ -1,0 +1,14 @@
+services:
+  bot:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-300}
+      STATE_FILE: /data/subscriptions.json
+    volumes:
+      - bot_state:/data
+
+volumes:
+  bot_state:
