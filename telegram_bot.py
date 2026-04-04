@@ -14,7 +14,15 @@ from telegram import BotCommand, Update
 from telegram.error import TelegramError
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from scraper import FilterCriteria, ServerOffer, fetch_offers, filter_offers, format_offer
+from scraper import (
+    FilterCriteria,
+    ServerOffer,
+    describe_disk_type,
+    fetch_offers,
+    filter_offers,
+    format_offer,
+    normalize_disk_type,
+)
 
 DEFAULT_POLL_INTERVAL_SECONDS = 300
 DEFAULT_STATE_FILE = Path("state/subscriptions.json")
@@ -164,6 +172,13 @@ def parse_optional_text(arguments: list[str]) -> str | None:
     return text
 
 
+def parse_optional_disk_type(arguments: list[str]) -> str | None:
+    text = parse_optional_text(arguments)
+    if text is None:
+        return None
+    return normalize_disk_type(text)
+
+
 def format_filters(subscription: ChatSubscription) -> str:
     filters = subscription.filters
     return "\n".join(
@@ -172,6 +187,7 @@ def format_filters(subscription: ChatSubscription) -> str:
             f"Min RAM: {filters.min_ram_gb if filters.min_ram_gb is not None else '-'} GB",
             f"Max price: {filters.max_price_eur if filters.max_price_eur is not None else '-'} EUR/month",
             f"Min disk total: {filters.min_disk_gb if filters.min_disk_gb is not None else '-'} GB",
+            f"Disk type: {describe_disk_type(filters.disk_type) if filters.disk_type is not None else '-'}",
             f"CPU contains: {filters.cpu_query or '-'}",
             f"Datacenter contains: {filters.datacenter_query or '-'}",
         ]
@@ -192,6 +208,7 @@ def build_help_text(poll_interval_seconds: int) -> str:
             "/set_min_ram 64 - require at least 64 GB RAM",
             "/set_max_price 35 - require at most 35 EUR/month",
             "/set_min_disk 1000 - require at least 1000 GB total disk",
+            "/set_disk_type ssd/nvme - require SSD/NVMe, HDD, or mixed disks",
             "/set_cpu ryzen - case-insensitive CPU substring filter",
             "/set_datacenter fsn1 - case-insensitive datacenter filter",
             "/check - show current matches right now",
@@ -347,6 +364,39 @@ async def set_min_disk_command(update: Update, context: ContextTypes.DEFAULT_TYP
     await update_numeric_filter(update, context, field_name="min_disk_gb", parser=parse_optional_int, label="Min disk")
 
 
+async def set_disk_type_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    if chat is None or update.message is None:
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /set_disk_type <ssd/nvme|sata|nvme|hdd|mixed|off>")
+        return
+
+    try:
+        value = parse_optional_disk_type(context.args)
+    except ValueError:
+        await update.message.reply_text("Invalid value. Use ssd/nvme, sata, nvme, hdd, mixed, or off.")
+        return
+
+    store = get_store(context.application)
+
+    def mutator(subscription: ChatSubscription) -> None:
+        filters = subscription.filters.to_dict()
+        filters["disk_type"] = value
+        subscription.filters = FilterCriteria.from_dict(filters)
+
+    subscription = await store.update(chat.id, mutator)
+    try:
+        subscription = await reset_baseline_for_chat(context.application, chat.id)
+        suffix = "disabled" if value is None else f"set to {describe_disk_type(value)}"
+        await update.message.reply_text(f"Disk type {suffix}. Existing matches were marked as seen.")
+        await update.message.reply_text(format_filters(subscription))
+    except requests.RequestException as exc:
+        LOGGER.warning("Could not refresh baseline after disk type filter change: %s", exc)
+        await update.message.reply_text("Filter saved, but baseline refresh failed. Notifications may include current matches once.")
+        await update.message.reply_text(format_filters(subscription))
+
+
 async def set_cpu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update_text_filter(update, context, field_name="cpu_query", label="CPU contains")
 
@@ -481,6 +531,7 @@ async def post_init(application: Application) -> None:
             BotCommand("set_min_ram", "set minimum RAM in GB"),
             BotCommand("set_max_price", "set maximum monthly price"),
             BotCommand("set_min_disk", "set minimum total disk in GB"),
+            BotCommand("set_disk_type", "set disk type filter"),
             BotCommand("set_cpu", "set CPU substring filter"),
             BotCommand("set_datacenter", "set datacenter filter"),
             BotCommand("check", "show current matches"),
@@ -533,6 +584,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("set_min_ram", set_min_ram_command))
     application.add_handler(CommandHandler("set_max_price", set_max_price_command))
     application.add_handler(CommandHandler("set_min_disk", set_min_disk_command))
+    application.add_handler(CommandHandler("set_disk_type", set_disk_type_command))
     application.add_handler(CommandHandler("set_cpu", set_cpu_command))
     application.add_handler(CommandHandler("set_datacenter", set_datacenter_command))
     application.add_handler(CommandHandler("check", check_command))
