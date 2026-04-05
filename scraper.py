@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from typing import Any, Iterable
+from urllib.parse import urlencode
 
 import certifi
 import requests
 
 AUCTION_DATA_URL = "https://www.hetzner.com/_resources/app/data/app/live_data_sb_EUR.json"
 AUCTION_PAGE_URL = "https://www.hetzner.com/sb/"
+AUCTION_SEARCH_PARAM = "search"
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_USER_AGENT = "hetzner-serverboerse-notify/2.0"
 DISK_TYPE_SSD_NVME = "ssd_nvme"
@@ -95,6 +97,10 @@ def extract_storage_media(payload: dict[str, Any], disks: tuple[str, ...]) -> tu
     return tuple(fallback_media)
 
 
+def build_offer_url(offer_id: int) -> str:
+    return f"{AUCTION_PAGE_URL}#{urlencode({AUCTION_SEARCH_PARAM: str(offer_id)})}"
+
+
 @dataclass(slots=True, frozen=True)
 class ServerOffer:
     id: int
@@ -168,7 +174,7 @@ class ServerOffer:
 
     @property
     def url(self) -> str:
-        return AUCTION_PAGE_URL
+        return build_offer_url(self.id)
 
 
 @dataclass(slots=True, frozen=True)
@@ -274,7 +280,7 @@ def format_offer(offer: ServerOffer) -> str:
             f"Disks: {disk_text}",
             f"Datacenter: {offer.datacenter or 'n/a'} | Bandwidth: {offer.bandwidth_mbit} Mbit | Specials: {specials}",
             f"Next price change: {offer.next_reduce_description}",
-            f"Auction page: {offer.url}",
+            f"Offer link: {offer.url}",
         ]
     )
 

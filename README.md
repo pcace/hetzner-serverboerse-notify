@@ -103,5 +103,6 @@ Use `off` to clear a single filter, for example:
 ## Notes
 
 - the bot marks existing matches as seen when you subscribe or change filters, so notifications are for new matching offers instead of a backlog flood
-- the auction detail link is the general auction page because Hetzner's live feed does not expose a stable per-offer public detail URL
+- notification messages include a deep link to the exact auction offer using Hetzner's `#search=<auction id>` filter
+- Hetzner's actual Robot order flow is a form `POST`, so there is no stable shareable public order URL to put into Telegram directly
 - for a host bind mount instead of the named Docker volume, adjust `docker-compose.yml` accordingly
