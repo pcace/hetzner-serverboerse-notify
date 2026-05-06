@@ -13,6 +13,7 @@ AUCTION_PAGE_URL = "https://www.hetzner.com/sb/"
 AUCTION_SEARCH_PARAM = "search"
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_USER_AGENT = "hetzner-serverboerse-notify/2.0"
+DEFAULT_VAT_RATE = 0.19
 DISK_TYPE_SSD_NVME = "ssd_nvme"
 DISK_TYPE_HDD = "hdd"
 DISK_TYPE_MIXED = "mixed"
@@ -108,6 +109,9 @@ class ServerOffer:
     ram_gb: int
     price_eur: float
     setup_price_eur: float
+    ip_price_monthly_eur: float
+    ip_price_hourly_eur: float
+    ip_address_count: int
     disk_count: int
     disk_size_gb: int
     disks: tuple[str, ...]
@@ -122,12 +126,16 @@ class ServerOffer:
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "ServerOffer":
         disks = tuple(str(entry) for entry in payload.get("hdd_arr", []))
+        ip_price_payload = payload.get("ip_price") or {}
         return cls(
             id=int(payload["id"]),
             cpu=str(payload.get("cpu", "Unknown CPU")),
             ram_gb=int(payload.get("ram_size") or 0),
             price_eur=float(payload.get("price") or 0),
             setup_price_eur=float(payload.get("setup_price") or 0),
+            ip_price_monthly_eur=float(ip_price_payload.get("Monthly") or 0),
+            ip_price_hourly_eur=float(ip_price_payload.get("Hourly") or 0),
+            ip_address_count=int(ip_price_payload.get("Amount") or 0),
             disk_count=int(payload.get("hdd_count") or 0),
             disk_size_gb=int(payload.get("hdd_size") or 0),
             disks=disks,
@@ -145,6 +153,18 @@ class ServerOffer:
         if self.disk_count and self.disk_size_gb:
             return self.disk_count * self.disk_size_gb
         return self.disk_size_gb
+
+    @property
+    def monthly_ip_charge_eur(self) -> float:
+        return self.ip_price_monthly_eur * self.ip_address_count
+
+    @property
+    def monthly_total_net_price_eur(self) -> float:
+        return self.price_eur + self.monthly_ip_charge_eur
+
+    @property
+    def monthly_total_gross_price_eur(self) -> float:
+        return self.monthly_total_net_price_eur * (1 + DEFAULT_VAT_RATE)
 
     @property
     def disk_type(self) -> str | None:
@@ -189,7 +209,7 @@ class FilterCriteria:
     def matches(self, offer: ServerOffer) -> bool:
         if self.min_ram_gb is not None and offer.ram_gb < self.min_ram_gb:
             return False
-        if self.max_price_eur is not None and offer.price_eur > self.max_price_eur:
+        if self.max_price_eur is not None and offer.monthly_total_gross_price_eur > self.max_price_eur:
             return False
         if self.min_disk_gb is not None and offer.total_disk_gb < self.min_disk_gb:
             return False
@@ -263,7 +283,7 @@ def fetch_raw_payload(session: requests.Session | None = None) -> dict[str, Any]
 def fetch_offers(session: requests.Session | None = None) -> list[ServerOffer]:
     payload = fetch_raw_payload(session=session)
     offers = [ServerOffer.from_payload(entry) for entry in payload.get("server", [])]
-    return sorted(offers, key=lambda offer: (offer.price_eur, -offer.ram_gb, offer.id))
+    return sorted(offers, key=lambda offer: (offer.monthly_total_gross_price_eur, -offer.ram_gb, offer.id))
 
 
 def filter_offers(offers: Iterable[ServerOffer], criteria: FilterCriteria) -> list[ServerOffer]:
@@ -276,7 +296,7 @@ def format_offer(offer: ServerOffer) -> str:
     return "\n".join(
         [
             f"#{offer.id} | {offer.cpu}",
-            f"Price: {offer.price_eur:.2f} EUR/month | RAM: {offer.ram_gb} GB | Disk total: {offer.total_disk_gb} GB | Disk type: {describe_disk_type(offer.disk_type)}",
+            f"Price: {offer.monthly_total_gross_price_eur:.2f} EUR/month incl. VAT | RAM: {offer.ram_gb} GB | Disk total: {offer.total_disk_gb} GB | Disk type: {describe_disk_type(offer.disk_type)}",
             f"Disks: {disk_text}",
             f"Datacenter: {offer.datacenter or 'n/a'} | Bandwidth: {offer.bandwidth_mbit} Mbit | Specials: {specials}",
             f"Next price change: {offer.next_reduce_description}",
@@ -288,7 +308,12 @@ def format_offer(offer: ServerOffer) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fetch and filter the Hetzner server auction feed.")
     parser.add_argument("--min-ram", dest="min_ram_gb", type=int, help="Minimum RAM in GB")
-    parser.add_argument("--max-price", dest="max_price_eur", type=float, help="Maximum monthly price in EUR")
+    parser.add_argument(
+        "--max-price",
+        dest="max_price_eur",
+        type=float,
+        help="Maximum monthly total in EUR incl. VAT and IPv4 charges",
+    )
     parser.add_argument("--min-disk", dest="min_disk_gb", type=int, help="Minimum total disk capacity in GB")
     parser.add_argument("--disk-type", dest="disk_type", help="Disk type filter: ssd/nvme, sata, nvme, hdd, or mixed")
     parser.add_argument("--cpu", dest="cpu_query", help="Case-insensitive CPU substring filter")

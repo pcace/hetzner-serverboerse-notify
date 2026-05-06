@@ -7,7 +7,7 @@ This version uses Hetzner's current live JSON feed and adds a Telegram bot with 
 ## What it does
 
 - fetches current auction offers from Hetzner's live JSON feed
-- filters offers by RAM, price, disk capacity, disk type, CPU substring, and datacenter substring
+- filters offers by RAM, monthly total price including VAT, disk capacity, disk type, CPU substring, and datacenter substring
 - sends Telegram notifications for new matching offers only
 - stores chat preferences locally in a JSON state file
 
@@ -46,6 +46,8 @@ You can test the feed and filters without Telegram:
 ```bash
 python3 scraper.py --min-ram 32 --max-price 35 --disk-type nvme --limit 5
 ```
+
+`--max-price` uses Hetzner's user-facing monthly total, including VAT and IPv4 charges when present.
 
 ## Run the bot
 

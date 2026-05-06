@@ -185,7 +185,7 @@ def format_filters(subscription: ChatSubscription) -> str:
         [
             f"Notifications: {'on' if subscription.enabled else 'paused'}",
             f"Min RAM: {filters.min_ram_gb if filters.min_ram_gb is not None else '-'} GB",
-            f"Max price: {filters.max_price_eur if filters.max_price_eur is not None else '-'} EUR/month",
+            f"Max price: {filters.max_price_eur if filters.max_price_eur is not None else '-'} EUR/month incl. VAT",
             f"Min disk total: {filters.min_disk_gb if filters.min_disk_gb is not None else '-'} GB",
             f"Disk type: {describe_disk_type(filters.disk_type) if filters.disk_type is not None else '-'}",
             f"CPU contains: {filters.cpu_query or '-'}",
@@ -206,7 +206,7 @@ def build_help_text(poll_interval_seconds: int) -> str:
             "/help - show this help",
             "/filters - show current filters",
             "/set_min_ram 64 - require at least 64 GB RAM",
-            "/set_max_price 35 - require at most 35 EUR/month",
+            "/set_max_price 35 - require at most 35 EUR/month incl. VAT",
             "/set_min_disk 1000 - require at least 1000 GB total disk",
             "/set_disk_type ssd/nvme - require SSD/NVMe, HDD, or mixed disks",
             "/set_cpu ryzen - case-insensitive CPU substring filter",
